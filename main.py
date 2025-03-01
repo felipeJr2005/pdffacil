@@ -1,13 +1,23 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import io
 import os
 import tempfile
 from PyPDF2 import PdfReader
-from docx import Document
+from pdf2docx import Converter
 import shutil
 
 app = FastAPI()
+
+# Configurar CORS para permitir solicitações do seu site
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://pdffacil.com", "http://pdffacil.com"],  # Lista de origens permitidas
+    allow_credentials=True,
+    allow_methods=["*"],  # Permitir todos os métodos
+    allow_headers=["*"],  # Permitir todos os cabeçalhos
+)
 
 @app.get("/")
 async def root():
@@ -48,26 +58,16 @@ async def pdf_to_docx(file: UploadFile = File(...)):
         with open(pdf_path, "wb") as pdf_file:
             pdf_file.write(content)
         
-        # Ler o PDF
-        pdf = PdfReader(pdf_path)
-        
-        # Criar documento DOCX
-        doc = Document()
-        
-        # Para cada página, extrair texto e adicionar ao DOCX
-        for i, page in enumerate(pdf.pages):
-            page_text = page.extract_text() or ""
-            if i > 0:  # Adicionar quebra de página após a primeira página
-                doc.add_page_break()
-            doc.add_paragraph(page_text)
-        
-        # Salvar o DOCX
-        doc.save(docx_path)
+        # Converter PDF para DOCX usando pdf2docx
+        # Esta biblioteca preserva melhor a formatação, incluindo tabelas, imagens e layout
+        cv = Converter(pdf_path)
+        cv.convert(docx_path)
+        cv.close()
         
         # Retornar o arquivo DOCX
         response = FileResponse(
             path=docx_path, 
-            filename="converted.docx",
+            filename=file.filename.replace('.pdf', '.docx'),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         
