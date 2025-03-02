@@ -109,33 +109,63 @@ async def pdf_to_excel(file: UploadFile = File(...)):
             for i, page in enumerate(pdf.pages):
                 page_text = page.extract_text() or ""
                 
-                # Dividir o texto em linhas
+                # Tentar estruturar o texto em linhas e colunas
                 lines = page_text.split('\n')
-                
-                # Criar uma lista de dicionários com os dados
                 rows = []
+                
                 for line in lines:
-                    if line.strip():  # Ignorar linhas vazias
-                        rows.append({"Conteúdo": line.strip()})
+                    if line.strip():
+                        # Tenta dividir a linha em colunas (divisão por espaços múltiplos)
+                        cols = [col.strip() for col in re.split(r'\s{2,}', line) if col.strip()]
+                        if len(cols) > 1:
+                            # Se conseguimos identificar colunas, adicionamos como uma linha
+                            rows.append(cols)
+                        else:
+                            # Caso contrário, adicionamos como uma coluna única
+                            rows.append([line.strip()])
                 
-                # Criar um DataFrame com o texto da página
-                df = pd.DataFrame(rows)
-                
-                # Salvar em uma planilha para esta página
-                sheet_name = f'Página {i+1}'
-                if len(sheet_name) > 31:  # Limite de caracteres para nomes de planilha
-                    sheet_name = sheet_name[:31]
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+                # Se temos dados estruturados
+                if rows:
+                    # Determinar o número máximo de colunas
+                    max_cols = max(len(row) for row in rows)
+                    
+                    # Padronizar todas as linhas para ter o mesmo número de colunas
+                    normalized_rows = []
+                    for row in rows:
+                        if len(row) < max_cols:
+                            row = row + [''] * (max_cols - len(row))
+                        normalized_rows.append(row)
+                    
+                    # Criar dataframe
+                    columns = [f'Coluna {j+1}' for j in range(max_cols)]
+                    df = pd.DataFrame(normalized_rows, columns=columns)
+                    
+                    # Salvar em uma planilha
+                    sheet_name = f'Página {i+1}'
+                    if len(sheet_name) > 31:
+                        sheet_name = sheet_name[:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                else:
+                    # Se não conseguimos estruturar, salvar o texto bruto
+                    df = pd.DataFrame({'Texto': [page_text]})
+                    sheet_name = f'Página {i+1}'
+                    if len(sheet_name) > 31:
+                        sheet_name = sheet_name[:31]
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
             
-            # Adicionar uma planilha com todo o texto
-            all_text = ""
-            for i, page in enumerate(pdf.pages):
-                all_text += f"--- Página {i+1} ---\n"
-                all_text += (page.extract_text() or "") + "\n\n"
+            # Adicionar planilha de resumo
+            summary = []
+            summary.append(["Arquivo", file.filename])
+            summary.append(["Total de Páginas", len(pdf.pages)])
+            summary.append(["Data de Processamento", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
             
-            # Criar um DataFrame com todo o texto
-            df_all = pd.DataFrame({"Texto Completo": [all_text]})
-            df_all.to_excel(writer, sheet_name='Texto Completo', index=False)
+            df_summary = pd.DataFrame(summary)
+            df_summary.to_excel(writer, sheet_name='Resumo', index=False, header=False)
+            
+            # Ajustar largura das colunas
+            worksheet = writer.sheets['Resumo']
+            worksheet.set_column('A:A', 20)
+            worksheet.set_column('B:B', 40)
         
         # Retornar o arquivo Excel
         response = FileResponse(
