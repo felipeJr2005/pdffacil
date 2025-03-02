@@ -3,11 +3,12 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io
 import os
+import re
 import tempfile
+from datetime import datetime
 from PyPDF2 import PdfReader
 from pdf2docx import Converter
 import pandas as pd
-import tabula
 import shutil
 
 app = FastAPI()
