@@ -3,3 +3,6 @@ uvicorn
 python-multipart
 PyPDF2
 pdf2docx
+pandas
+tabula-py
+xlsxwriter
