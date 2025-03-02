@@ -25,11 +25,13 @@ async def root():
 # Importar módulos manualmente (para controle mais preciso do que é carregado)
 from modules.pdf_to_docx.routes import router as pdf_to_docx_router
 from modules.pdf_to_excel.routes import router as pdf_to_excel_router
+from modules.pdf_to_txt.routes import router as pdf_to_text_router
 
 
 # Incluir rotas de cada módulo
 app.include_router(pdf_to_docx_router)
 app.include_router(pdf_to_excel_router)
+app.include_router(pdf_to_text_router)
 
 
 # Versão alternativa com carregamento dinâmico de módulos
