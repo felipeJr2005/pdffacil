@@ -2,7 +2,7 @@ import os
 from PyPDF2 import PdfReader
 from core.common import create_temp_directory, clean_up_temp_directory
 
-async def convert_pdf_to_text(file):
+async def convert_pdf_to_txt(file):
     """
     Extrai texto de um arquivo PDF.
     
