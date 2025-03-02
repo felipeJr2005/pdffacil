@@ -100,37 +100,42 @@ async def pdf_to_excel(file: UploadFile = File(...)):
         with open(pdf_path, "wb") as pdf_file:
             pdf_file.write(content)
         
-        # Extrair tabelas de todas as páginas do PDF
-        tables = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True)
+        # Ler o PDF
+        pdf = PdfReader(pdf_path)
         
         # Criar um escritor Excel
         with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
-            # Se nenhuma tabela for encontrada, criar uma planilha com o texto extraído
-            if not tables:
-                pdf = PdfReader(pdf_path)
-                text = ""
-                for i, page in enumerate(pdf.pages):
-                    page_text = page.extract_text() or ""
-                    text += page_text + "\n\n"
+            # Extrair texto de cada página
+            for i, page in enumerate(pdf.pages):
+                page_text = page.extract_text() or ""
                 
-                # Criar um DataFrame com o texto
-                df = pd.DataFrame({"Texto Extraído": [text]})
-                df.to_excel(writer, sheet_name='Texto Extraído', index=False)
-            else:
-                # Salvar cada tabela em uma aba diferente da planilha
-                for i, table in enumerate(tables):
-                    sheet_name = f'Tabela {i+1}'
-                    # Limitar o nome da aba para 31 caracteres (limite do Excel)
-                    if len(sheet_name) > 31:
-                        sheet_name = sheet_name[:31]
-                    table.to_excel(writer, sheet_name=sheet_name, index=False)
+                # Dividir o texto em linhas
+                lines = page_text.split('\n')
+                
+                # Criar uma lista de dicionários com os dados
+                rows = []
+                for line in lines:
+                    if line.strip():  # Ignorar linhas vazias
+                        rows.append({"Conteúdo": line.strip()})
+                
+                # Criar um DataFrame com o texto da página
+                df = pd.DataFrame(rows)
+                
+                # Salvar em uma planilha para esta página
+                sheet_name = f'Página {i+1}'
+                if len(sheet_name) > 31:  # Limite de caracteres para nomes de planilha
+                    sheet_name = sheet_name[:31]
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
             
-            # Configurar formatação adicional se necessário
-            workbook = writer.book
-            for sheet in writer.sheets:
-                worksheet = writer.sheets[sheet]
-                # Ajustar largura das colunas
-                worksheet.autofit()
+            # Adicionar uma planilha com todo o texto
+            all_text = ""
+            for i, page in enumerate(pdf.pages):
+                all_text += f"--- Página {i+1} ---\n"
+                all_text += (page.extract_text() or "") + "\n\n"
+            
+            # Criar um DataFrame com todo o texto
+            df_all = pd.DataFrame({"Texto Completo": [all_text]})
+            df_all.to_excel(writer, sheet_name='Texto Completo', index=False)
         
         # Retornar o arquivo Excel
         response = FileResponse(
