@@ -106,68 +106,80 @@ async def pdf_to_excel(file: UploadFile = File(...)):
         
         # Criar um escritor Excel
         with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
-            # Extrair texto de cada página
+            # Lista para armazenar dados de todas as páginas
+            all_table_data = []
+            
             for i, page in enumerate(pdf.pages):
                 page_text = page.extract_text() or ""
                 
-                # Tentar estruturar o texto em linhas e colunas
+                # Melhorar detecção de tabelas
                 lines = page_text.split('\n')
-                rows = []
+                structured_rows = []
                 
                 for line in lines:
-                    if line.strip():
-                        # Tenta dividir a linha em colunas (divisão por espaços múltiplos)
-                        cols = [col.strip() for col in re.split(r'\s{2,}', line) if col.strip()]
-                        if len(cols) > 1:
-                            # Se conseguimos identificar colunas, adicionamos como uma linha
-                            rows.append(cols)
-                        else:
-                            # Caso contrário, adicionamos como uma coluna única
-                            rows.append([line.strip()])
+                    # Remover linhas de cabeçalho ou rodapé
+                    if any(header in line for header in ['U.S. Department', 'Table 1.', 'Footnotes:', 'Total Apportionment']):
+                        continue
+                    
+                    # Dividir linha usando regex para lidar com múltiplos espaços
+                    cols = [col.strip() for col in re.split(r'\s{2,}', line) if col.strip()]
+                    
+                    # Validar se a linha parece ser uma linha de dados
+                    if len(cols) >= 4:
+                        try:
+                            # Tentar converter dados numéricos
+                            population = int(cols[1].replace(',', ''))
+                            representatives = int(cols[2].replace(',', ''))
+                            change = int(cols[3].replace(',', '')) if len(cols) > 3 else 0
+                            
+                            structured_rows.append([
+                                cols[0],  # Estado
+                                population,
+                                representatives,
+                                change
+                            ])
+                        except (ValueError, IndexError):
+                            # Pular linhas que não podem ser convertidas
+                            continue
                 
-                # Se temos dados estruturados
-                if rows:
-                    # Determinar o número máximo de colunas
-                    max_cols = max(len(row) for row in rows)
-                    
-                    # Padronizar todas as linhas para ter o mesmo número de colunas
-                    normalized_rows = []
-                    for row in rows:
-                        if len(row) < max_cols:
-                            row = row + [''] * (max_cols - len(row))
-                        normalized_rows.append(row)
-                    
-                    # Criar dataframe
-                    columns = [f'Coluna {j+1}' for j in range(max_cols)]
-                    df = pd.DataFrame(normalized_rows, columns=columns)
-                    
-                    # Salvar em uma planilha
-                    sheet_name = f'Página {i+1}'
-                    if len(sheet_name) > 31:
-                        sheet_name = sheet_name[:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                else:
-                    # Se não conseguimos estruturar, salvar o texto bruto
-                    df = pd.DataFrame({'Texto': [page_text]})
-                    sheet_name = f'Página {i+1}'
-                    if len(sheet_name) > 31:
-                        sheet_name = sheet_name[:31]
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                # Adicionar dados da página à lista geral
+                all_table_data.extend(structured_rows)
             
-            # Adicionar planilha de resumo
-            summary = []
-            summary.append(["Arquivo", file.filename])
-            summary.append(["Total de Páginas", len(pdf.pages)])
-            summary.append(["Data de Processamento", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+            # Criar DataFrame principal
+            if all_table_data:
+                df = pd.DataFrame(all_table_data, 
+                                  columns=['Estado', 'População', 'Representantes', 'Mudança 2010'])
+                
+                # Salvar planilha principal
+                df.to_excel(writer, sheet_name='Dados', index=False)
+                
+                # Adicionar planilha de resumo
+                summary_data = [
+                    ['Total de Estados', len(df)],
+                    ['População Total', df['População'].sum()],
+                    ['Total de Representantes', df['Representantes'].sum()],
+                    ['Data de Processamento', datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                ]
+                
+                df_summary = pd.DataFrame(summary_data)
+                df_summary.to_excel(writer, sheet_name='Resumo', index=False, header=False)
+                
+                # Ajustar largura das colunas
+                workbook = writer.book
+                worksheet_dados = writer.sheets['Dados']
+                worksheet_resumo = writer.sheets['Resumo']
+                
+                # Formatação para planilha de dados
+                formato_numero = workbook.add_format({'num_format': '#,##0'})
+                worksheet_dados.set_column('A:A', 20)  # Estado
+                worksheet_dados.set_column('B:B', 15, formato_numero)  # População
+                worksheet_dados.set_column('C:C', 15, formato_numero)  # Representantes
+                worksheet_dados.set_column('D:D', 15, formato_numero)  # Mudança
+                
+                # Formatação para planilha de resumo
+                worksheet_resumo.set_column('A:A', 25)
+                worksheet_resumo.set_column('B:B', 20)
             
-            df_summary = pd.DataFrame(summary)
-            df_summary.to_excel(writer, sheet_name='Resumo', index=False, header=False)
-            
-            # Ajustar largura das colunas
-            worksheet = writer.sheets['Resumo']
-            worksheet.set_column('A:A', 20)
-            worksheet.set_column('B:B', 40)
-        
         # Retornar o arquivo Excel
         response = FileResponse(
             path=excel_path, 
