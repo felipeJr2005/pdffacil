@@ -1,5 +1,5 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request
-from .processor import extract_text_from_pdf
+from .processor import convert_pdf_to_text  # ← CORRIGIDO: nome correto da função
 from core.rate_limiter import rate_limiter
 
 # Criar router para este módulo
@@ -33,8 +33,8 @@ async def pdf_to_text_endpoint(request: Request, file: UploadFile = File(...)):
     file.file = BytesIO(content)
     
     try:
-        # Processar o PDF
-        result = await extract_text_from_pdf(file)
+        # Processar o PDF - CORRIGIDO: nome da função
+        result = await convert_pdf_to_text(file)
         
         # Adicionar info de rate limiting na resposta
         rate_status = rate_limiter.get_status(request)
