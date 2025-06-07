@@ -1,5 +1,11 @@
 FROM python:3.10-slim-bullseye
 
+# Instalar dependências para PyMuPDF
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONUNBUFFERED True
 ENV APP_HOME /app
 WORKDIR $APP_HOME
