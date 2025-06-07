@@ -1,6 +1,7 @@
-import os
-import fitz  # PyMuPDF
-from core.common import create_temp_directory, clean_up_temp_directory
+import pymupdf
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def convert_pdf_to_text(file):
     """
@@ -10,89 +11,67 @@ async def convert_pdf_to_text(file):
         file: Arquivo PDF enviado pelo usuário
         
     Returns:
-        dict: Dicionário contendo o texto extraído e metadados
+        dict: Dados extraídos do PDF
     """
-    # Criar diretório temporário
-    temp_dir = create_temp_directory()
-    pdf_path = os.path.join(temp_dir, "input.pdf")
-    
     try:
-        # Salvar o PDF recebido
+        # Ler o conteúdo do arquivo
         content = await file.read()
-        with open(pdf_path, "wb") as pdf_file:
-            pdf_file.write(content)
+        logger.info(f"PDF recebido: {len(content)} bytes")
         
-        # Abrir o PDF com PyMuPDF
-        doc = fitz.open(pdf_path)
+        # Abrir PDF com PyMuPDF
+        doc = pymupdf.open(stream=content, filetype="pdf")
         
-        # Extrair texto de cada página
-        text_content = []
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            
-            # Extrair texto com melhor formatação
-            page_text = page.get_text("text")
-            
-            # Alternativa para texto com layout preservado (descomente se necessário)
-            # page_text = page.get_text("dict")  # Para estrutura mais detalhada
-            # page_text = page.get_text("blocks")  # Para blocos de texto
-            
-            text_content.append({
+        # Extrair informações básicas
+        num_pages = len(doc)
+        metadata = doc.metadata
+        
+        # Extrair texto de todas as páginas
+        full_text = ""
+        pages_text = []
+        
+        for page_num in range(num_pages):
+            page = doc[page_num]
+            page_text = page.get_text()
+            pages_text.append({
                 "page": page_num + 1,
-                "content": page_text or ""
+                "text": page_text.strip(),
+                "char_count": len(page_text)
             })
+            full_text += page_text + "\n"
         
-        # Extrair metadados do PDF
-        metadata = {}
-        pdf_metadata = doc.metadata
-        if pdf_metadata:
-            # Mapear metadados para formato compatível
-            metadata_mapping = {
-                'title': 'Title',
-                'author': 'Author', 
-                'subject': 'Subject',
-                'creator': 'Creator',
-                'producer': 'Producer',
-                'creationDate': 'CreationDate',
-                'modDate': 'ModDate',
-                'keywords': 'Keywords'
-            }
-            
-            for pymupdf_key, display_key in metadata_mapping.items():
-                if pymupdf_key in pdf_metadata and pdf_metadata[pymupdf_key]:
-                    metadata[display_key] = str(pdf_metadata[pymupdf_key])
-        
-        # Informações adicionais do documento
-        doc_info = {
-            "page_count": len(doc),
-            "is_pdf": True,
-            "needs_password": doc.needs_pass,
-            "is_encrypted": doc.is_encrypted,
-            "permissions": doc.permissions if hasattr(doc, 'permissions') else None
-        }
-        
-        # Fechar o documento
+        # Fechar documento
         doc.close()
         
-        # Resultado final (mantendo compatibilidade com frontend)
+        # Preparar resposta
         result = {
+            "success": True,
             "filename": file.filename,
-            "total_pages": len(text_content),
-            "metadata": metadata,
-            "document_info": doc_info,
-            "text": text_content
+            "pages": num_pages,
+            "total_characters": len(full_text),
+            "metadata": {
+                "title": metadata.get("title", ""),
+                "author": metadata.get("author", ""),
+                "subject": metadata.get("subject", ""),
+                "creator": metadata.get("creator", ""),
+                "producer": metadata.get("producer", ""),
+                "creation_date": metadata.get("creationDate", ""),
+                "modification_date": metadata.get("modDate", "")
+            },
+            "full_text": full_text.strip(),
+            "pages_text": pages_text
         }
         
+        logger.info(f"Texto extraído: {num_pages} páginas, {len(full_text)} caracteres")
         return result
         
     except Exception as e:
-        # Fechar documento se ainda estiver aberto
-        if 'doc' in locals() and doc:
-            doc.close()
-        
-        # Limpar arquivos temporários em caso de erro
-        clean_up_temp_directory(temp_dir)
-        raise e
+        logger.error(f"Erro ao extrair texto do PDF: {str(e)}")
+        raise Exception(f"Erro ao processar PDF: {str(e)}")
+    
     finally:
-        # Sempre limpar arquivos temporários após o uso
-        clean_up_temp_directory(temp_dir)
+        # Garantir que o documento seja fechado
+        try:
+            if 'doc' in locals():
+                doc.close()
+        except:
+            pass
